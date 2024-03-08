@@ -1,5 +1,6 @@
 package com.tk.orderservice.service;
 
+import com.tk.orderservice.dto.InventoryResponse;
 import com.tk.orderservice.dto.OrderLineItemsDto;
 import com.tk.orderservice.dto.OrderRequest;
 import com.tk.orderservice.model.Order;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,15 +31,21 @@ public class OrderService {
                 .map(this::mapToDto).toList();
         order.setOrderLineItemsList(orderLineItems);
 
+        List<String> skuCodes = order.getOrderLineItemsList().stream()
+                .map(OrderLineItems::getSkuCode).toList();
+
         // call inventory service and place order if product is in stock
-        Boolean isInStock = webClient.get()
-                .uri("http://localhost:8082/api/inventory")
+        InventoryResponse[] inventoryResponsesArray = webClient.get()
+                .uri("http://localhost:8082/api/inventory",
+                        uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
                 .retrieve()
-                .bodyToMono(Boolean.class)
+                .bodyToMono(InventoryResponse[].class)
                 .block();
-        if(isInStock){
+
+        boolean allProductsInStock = Arrays.stream(inventoryResponsesArray).allMatch(InventoryResponse::isInStock);
+        if (allProductsInStock) {
             orderRepository.save(order);
-        }else{
+        } else {
             throw new IllegalArgumentException("Product is out of stock! Please try again later.");
         }
     }
